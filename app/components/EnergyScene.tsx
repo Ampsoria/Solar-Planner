@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import type * as Three from "three";
+import type { Appliance, ApplianceKind } from "../lib/energy";
+import { planSceneInventory } from "../lib/scene-inventory";
 
 export interface EnergySceneProps {
   night: boolean;
   solarKw: number;
   evEnabled: boolean;
   evCharging?: boolean;
-  applianceCount: number;
+  appliances: Pick<Appliance, "id" | "kind" | "count">[];
+  evCount: number;
   playing: boolean;
   onSelect?: (kind: "solar" | "home" | "ev") => void;
 }
@@ -314,7 +317,7 @@ export default function EnergyScene(props: EnergySceneProps) {
       box(0.045, 0.047, 1.12, 1.19, 3.35, 1.24, darkMetal, house);
       box(0.02, 0.59, 1.07, 1.19, 3.02, 1.24, railingGlass, house);
 
-      // Ground-floor furniture and appliances visible through the open facade.
+      // Decorative ground-floor furniture visible through the open facade.
       box(2.21, 0.021, 1.67, -2.09, 0.467, 0.35, mat(0xdbdac6), house, 0.04);
       const sofa = mat(0xb9c8b7);
       box(1.92, 0.33, 0.71, -2.18, 0.76, 0.7, sofa, house, 0.09);
@@ -338,19 +341,7 @@ export default function EnergyScene(props: EnergySceneProps) {
       cylinder(0.08, 0.08, 0.1, -1.88, 0.95, -0.25, ivory, house);
       box(0.31, 0.018, 0.22, -2.18, 0.911, -0.25, mat(0x648978), house);
       box(1.7, 0.39, 0.4, -2.25, 0.67, -1.98, paleWood, house, 0.025);
-      box(1.4, 0.86, 0.065, -2.25, 1.32, -2.02, dark, house, 0.025);
-      box(1.32, 0.78, 0.018, -2.25, 1.32, -1.978, screen, house);
-      // A subtle screen graphic uses geometry, so every asset remains self-contained.
-      const screenGraphic = mat(0x71b398, 0.5, {
-        emissive: 0x47916f,
-        emissiveIntensity: 0.35,
-      });
-      box(0.48, 0.025, 0.02, -2.51, 1.24, -1.962, screenGraphic, house);
-      box(0.73, 0.02, 0.02, -2.38, 1.12, -1.962, screenGraphic, house);
-      sphere(0.155, -1.94, 1.43, -1.968, screenGraphic, house).scale.z = 0.06;
-      box(1.01, 0.26, 0.23, -2.18, 2.22, -2.29, white, house, 0.04);
-      box(0.86, 0.025, 0.018, -2.18, 2.15, -2.164, dark, house);
-      // Kitchen cabinets, fridge, worktop, induction hob and faucet.
+      // Decorative kitchen cabinets, worktop, sink and faucet.
       box(1.32, 0.86, 0.55, 0.4, 0.88, -2.07, mint, house, 0.015);
       box(1.42, 0.067, 0.65, 0.36, 1.34, -2.03, ivory, house, 0.02);
       for (let i = 0; i < 3; i++)
@@ -364,8 +355,6 @@ export default function EnergyScene(props: EnergySceneProps) {
           darkMetal,
           house,
         );
-      box(0.45, 0.013, 0.39, 0.65, 1.382, -2.03, dark, house, 0.025);
-      cylinder(0.1, 0.1, 0.018, 0.64, 1.4, -1.99, chrome, house);
       box(0.44, 0.015, 0.31, -0.04, 1.381, -2.05, chrome, house, 0.05);
       tube(
         [
@@ -378,11 +367,7 @@ export default function EnergyScene(props: EnergySceneProps) {
         chrome,
         house,
       );
-      box(0.63, 1.66, 0.61, -0.67, 1.285, -2.03, white, house, 0.035);
-      box(0.61, 0.018, 0.02, -0.67, 1.6, -1.716, darkMetal, house);
-      box(0.022, 0.31, 0.055, -0.42, 1.35, -1.68, chrome, house);
-      box(0.022, 0.18, 0.055, -0.42, 1.84, -1.68, chrome, house);
-      // Dining nook and a pendant over the living area.
+      // Dining nook.
       cylinder(0.4, 0.4, 0.07, 0.22, 1.03, -0.37, paleWood, house, 28);
       cylinder(0.075, 0.2, 0.54, 0.22, 0.725, -0.37, dark, house);
       for (const z of [-0.99, 0.27]) {
@@ -401,8 +386,6 @@ export default function EnergyScene(props: EnergySceneProps) {
         for (const x of [0.07, 0.37])
           box(0.035, 0.29, 0.035, x, 0.59, z, dark, house);
       }
-      cylinder(0.011, 0.011, 0.55, -2, 2.25, -0.24, dark, house, 8);
-      cylinder(0.12, 0.31, 0.17, -2, 1.91, -0.24, warm, house);
 
       // Solar array: eight individually framed panels, with actual cell dividers.
       const solar = new THREE.Group();
@@ -440,8 +423,7 @@ export default function EnergyScene(props: EnergySceneProps) {
       // EV: curved mint body, a glass cabin, lights, mirrors, wheels and charge port.
       const ev = new THREE.Group();
       ev.userData.kind = "ev";
-      ev.position.set(3.19, 0.34, 1.07);
-      root.add(ev);
+      // This unmounted template shares geometry and materials with every EV copy.
       box(1.48, 0.41, 2.79, 0, 0.49, 0, mint, ev, 0.2);
       box(1.33, 0.23, 2.66, 0, 0.64, -0.02, mint, ev, 0.12);
       box(1.19, 0.57, 1.52, 0, 0.96, -0.16, dark, ev, 0.18);
@@ -523,6 +505,344 @@ export default function EnergyScene(props: EnergySceneProps) {
         charger,
       );
       box(0.085, 0.14, 0.17, 2.51, 0.99, 0.62, dark, charger, 0.02);
+
+      // Each template is built once; all physical units share its part geometries.
+      const deviceTemplates = new Map<ApplianceKind, Three.Group>();
+      const applianceKinds: ApplianceKind[] = [
+        "ac",
+        "fridge",
+        "tv",
+        "washer",
+        "light",
+        "waterheater",
+        "computer",
+        "custom",
+      ];
+      for (const kind of applianceKinds) {
+        const model = new THREE.Group();
+        deviceTemplates.set(kind, model);
+        box(1.02, 0.08, 1.02, 0, 0.04, 0, ivory, model, 0.05);
+        // A slim colored front edge ties the miniatures to the energy system.
+        box(0.74, 0.035, 0.025, 0, 0.065, 0.505, mint, model);
+        if (kind === "ac") {
+          box(0.9, 0.4, 0.32, 0, 0.53, 0, white, model, 0.055);
+          box(0.075, 0.3, 0.075, 0, 0.23, -0.08, chrome, model);
+          for (let i = 0; i < 3; i++)
+            box(0.76, 0.018, 0.025, 0, 0.41 + i * 0.045, 0.169, dark, model);
+          box(0.09, 0.025, 0.022, 0.29, 0.64, 0.17, energyMaterial, model);
+        } else if (kind === "fridge") {
+          box(0.56, 1.02, 0.55, 0, 0.59, 0, white, model, 0.035);
+          box(0.53, 0.017, 0.022, 0, 0.76, 0.28, darkMetal, model);
+          box(0.03, 0.25, 0.045, 0.2, 0.53, 0.3, chrome, model);
+          box(0.03, 0.15, 0.045, 0.2, 0.9, 0.3, chrome, model);
+        } else if (kind === "tv") {
+          box(0.92, 0.58, 0.075, 0, 0.57, 0, dark, model, 0.025);
+          box(0.83, 0.49, 0.018, 0, 0.57, 0.047, screen, model);
+          box(0.45, 0.025, 0.025, -0.1, 0.48, 0.063, mint, model);
+          box(0.1, 0.18, 0.085, 0, 0.2, 0, dark, model);
+          box(0.5, 0.04, 0.27, 0, 0.1, 0, dark, model, 0.02);
+        } else if (kind === "washer") {
+          box(0.64, 0.74, 0.58, 0, 0.45, 0, white, model, 0.045);
+          const rim = cylinder(0.23, 0.23, 0.045, 0, 0.41, 0.31, chrome, model);
+          rim.rotation.x = Math.PI / 2;
+          const door = cylinder(
+            0.18,
+            0.18,
+            0.052,
+            0,
+            0.41,
+            0.335,
+            glass,
+            model,
+          );
+          door.rotation.x = Math.PI / 2;
+          box(0.25, 0.075, 0.018, -0.12, 0.72, 0.3, dark, model);
+          sphere(0.045, 0.2, 0.72, 0.31, chrome, model);
+        } else if (kind === "light") {
+          cylinder(0.18, 0.23, 0.06, 0, 0.11, 0, darkMetal, model);
+          cylinder(0.025, 0.025, 0.67, 0, 0.47, 0, chrome, model, 10);
+          cylinder(0.18, 0.31, 0.28, 0, 0.85, 0, warm, model);
+          sphere(0.1, 0, 0.72, 0, warm, model);
+        } else if (kind === "waterheater") {
+          box(0.46, 0.64, 0.24, -0.12, 0.64, 0, white, model, 0.065);
+          box(0.06, 0.32, 0.06, -0.12, 0.24, -0.07, chrome, model);
+          sphere(0.065, -0.12, 0.62, 0.14, mint, model);
+          box(0.16, 0.045, 0.018, -0.12, 0.82, 0.13, dark, model);
+          tube(
+            [
+              [0.02, 0.34, 0.03],
+              [0.15, 0.15, 0.04],
+              [0.36, 0.3, 0.04],
+              [0.36, 0.82, 0.04],
+            ],
+            0.018,
+            chrome,
+            model,
+          );
+          const shower = cylinder(
+            0.1,
+            0.08,
+            0.045,
+            0.36,
+            0.88,
+            0.055,
+            darkMetal,
+            model,
+          );
+          shower.rotation.x = Math.PI / 3;
+        } else if (kind === "computer") {
+          box(0.64, 0.43, 0.06, -0.09, 0.58, -0.06, dark, model, 0.025);
+          box(0.56, 0.35, 0.015, -0.09, 0.58, -0.02, screen, model);
+          box(0.065, 0.24, 0.065, -0.09, 0.26, -0.06, chrome, model);
+          box(0.3, 0.03, 0.24, -0.09, 0.13, -0.03, chrome, model);
+          box(0.58, 0.035, 0.2, -0.09, 0.12, 0.28, dark, model, 0.015);
+          box(0.19, 0.51, 0.4, 0.35, 0.34, -0.05, darkMetal, model, 0.025);
+          box(0.07, 0.02, 0.018, 0.35, 0.52, 0.16, energyMaterial, model);
+        } else {
+          box(0.56, 0.62, 0.46, 0, 0.4, 0, mint, model, 0.06);
+          box(0.24, 0.17, 0.025, 0, 0.52, 0.24, dark, model, 0.02);
+          for (const x of [-0.055, 0.055])
+            box(0.025, 0.055, 0.027, x, 0.52, 0.259, ivory, model);
+          tube(
+            [
+              [0.26, 0.21, 0],
+              [0.4, 0.14, 0.12],
+              [0.37, 0.14, 0.36],
+            ],
+            0.023,
+            dark,
+            model,
+          );
+          box(0.13, 0.09, 0.12, 0.34, 0.14, 0.36, dark, model, 0.015);
+        }
+        model.updateMatrixWorld(true);
+      }
+      const inventory = new THREE.Group();
+      inventory.userData.kind = "home";
+      root.add(inventory);
+      const displayDeck = box(
+        1,
+        0.16,
+        1,
+        0,
+        0.23,
+        4.45,
+        foundation,
+        root,
+        0.045,
+      );
+      const parkingDeck = box(
+        1,
+        0.09,
+        1,
+        3.19,
+        0.29,
+        1.07,
+        concrete,
+        root,
+        0.03,
+      );
+      const cars = new Map<string, Three.Group>();
+      const births = new Map<string, number>();
+      type InventoryPlan = ReturnType<typeof planSceneInventory>;
+      type InstanceBatch = {
+        part: Three.InstancedMesh;
+        local: Three.Matrix4;
+        units: InventoryPlan["units"];
+      };
+      let inventoryPlan = planSceneInventory([]);
+      let instanceBatches: InstanceBatch[] = [];
+      let inventorySignature = "";
+      let currentEvCount = -1;
+      let applianceTotal = 0;
+      let popping = false;
+      const instanceTransform = new THREE.Object3D();
+      const composedMatrix = new THREE.Matrix4();
+      const sceneBounds = new THREE.Box3(
+        new THREE.Vector3(-5.25, -0.15, -4),
+        new THREE.Vector3(5.25, 6, 4),
+      );
+
+      function syncInventory(
+        settings: EnergySceneProps,
+        animationTime: number,
+        motion: boolean,
+      ) {
+        const signature = JSON.stringify(
+          settings.appliances.map(({ id, kind, count }) => [id, kind, count]),
+        );
+        const evCount = settings.evEnabled
+          ? Math.max(0, Math.floor(settings.evCount))
+          : 0;
+        if (signature === inventorySignature && evCount === currentEvCount)
+          return;
+        if (signature !== inventorySignature) {
+          inventorySignature = signature;
+          inventoryPlan = planSceneInventory(settings.appliances);
+          applianceTotal = inventoryPlan.units.length;
+          for (const { part } of instanceBatches) {
+            inventory.remove(part);
+            part.dispose();
+          }
+          instanceBatches = [];
+          for (const kind of applianceKinds) {
+            const units = inventoryPlan.units.filter(
+              (unit) => unit.kind === kind,
+            );
+            if (!units.length) continue;
+            deviceTemplates.get(kind)!.traverse((object) => {
+              if (!(object instanceof THREE.Mesh)) return;
+              const part = new THREE.InstancedMesh(
+                object.geometry,
+                object.material,
+                units.length,
+              );
+              part.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+              part.castShadow = true;
+              part.receiveShadow = true;
+              part.frustumCulled = false;
+              part.userData.unitKeys = units.map((unit) => unit.key);
+              inventory.add(part);
+              instanceBatches.push({
+                part,
+                local: object.matrixWorld.clone(),
+                units,
+              });
+            });
+          }
+          displayDeck.visible = applianceTotal > 0;
+          displayDeck.scale.set(
+            inventoryPlan.width + 0.24,
+            1,
+            inventoryPlan.depth + 0.24,
+          );
+          displayDeck.position.set(
+            inventoryPlan.centerX,
+            0.23,
+            4.45 + (inventoryPlan.depth - 1.18) / 2,
+          );
+        }
+        for (const [key, car] of cars) {
+          if (Number(key.slice(3)) >= evCount) {
+            root.remove(car);
+            cars.delete(key);
+          }
+        }
+        for (let index = 0; index < evCount; index++) {
+          const key = `ev:${index}`;
+          if (!cars.has(key)) {
+            const car = ev.clone(true);
+            car.name = key;
+            car.userData.unitKey = key;
+            root.add(car);
+            cars.set(key, car);
+          }
+        }
+        currentEvCount = evCount;
+        const activeKeys = new Set([
+          ...inventoryPlan.units.map((unit) => unit.key),
+          ...cars.keys(),
+        ]);
+        for (const key of births.keys())
+          if (!activeKeys.has(key)) births.delete(key);
+        for (const key of activeKeys)
+          if (!births.has(key))
+            births.set(key, motion ? animationTime : animationTime - 1);
+        popping = true;
+        parkingDeck.visible = evCount > 1;
+        const parkingRows = Math.ceil(evCount / 2);
+        parkingDeck.scale.set(
+          evCount > 1 ? 4.05 : 1.9,
+          1,
+          Math.max(1, parkingRows) * 3.3,
+        );
+        parkingDeck.position.set(
+          evCount > 1 ? 4.19 : 3.19,
+          0.29,
+          1.07 + (parkingRows - 1) * 1.65,
+        );
+        sceneBounds.min.set(
+          Math.min(-5.25, 2.1 - inventoryPlan.width),
+          -0.15,
+          -4,
+        );
+        sceneBounds.max.set(
+          evCount > 1 ? 6.3 : 5.25,
+          6,
+          Math.max(
+            4,
+            applianceTotal ? 4.45 + inventoryPlan.depth - 0.47 : 4,
+            evCount ? 2.65 + (parkingRows - 1) * 3.3 : 4,
+          ),
+        );
+        const target = sceneBounds.getCenter(new THREE.Vector3());
+        target.y = 2.15;
+        camera.position.add(target.clone().sub(controls.target));
+        controls.target.copy(target);
+        camera.position
+          .sub(target)
+          .normalize()
+          .multiplyScalar(
+            Math.max(
+              19,
+              sceneBounds.getSize(new THREE.Vector3()).length() * 1.2,
+            ),
+          )
+          .add(target);
+        camera.far = Math.max(
+          100,
+          sceneBounds.getSize(new THREE.Vector3()).length() * 5,
+        );
+        camera.zoom = 1;
+        controls.update();
+        resize();
+        renderer.domElement.setAttribute(
+          "aria-label",
+          `บ้านสามมิติ เครื่องใช้ไฟฟ้า ${applianceTotal} ชิ้น รถ EV ${evCount} คัน ลากเพื่อหมุนมุมมอง`,
+        );
+      }
+
+      function updateInventory(animationTime: number, motion: boolean) {
+        if (!popping) return;
+        let unfinished = false;
+        const progress = (key: string) => {
+          const t = motion
+            ? Math.min(
+                1,
+                (animationTime - (births.get(key) ?? animationTime)) / 0.42,
+              )
+            : 1;
+          if (t < 1) unfinished = true;
+          return 1 - Math.pow(1 - t, 3);
+        };
+        for (const { part, local, units } of instanceBatches) {
+          units.forEach((unit, index) => {
+            const t = progress(unit.key);
+            instanceTransform.position.set(
+              unit.x,
+              0.31 - (1 - t) * 0.22,
+              unit.z,
+            );
+            instanceTransform.scale.setScalar(0.12 + t * 0.88);
+            instanceTransform.updateMatrix();
+            composedMatrix.multiplyMatrices(instanceTransform.matrix, local);
+            part.setMatrixAt(index, composedMatrix);
+          });
+          part.instanceMatrix.needsUpdate = true;
+          part.computeBoundingSphere();
+        }
+        for (const [key, car] of cars) {
+          const index = Number(key.slice(3));
+          const t = progress(key);
+          car.position.set(
+            3.19 + (index % 2) * 2,
+            0.34 - (1 - t) * 0.2,
+            1.07 + Math.floor(index / 2) * 3.3,
+          );
+          car.scale.setScalar(0.12 + t * 0.88);
+        }
+        popping = unfinished;
+      }
 
       // Layered, softly faceted trees, planters, hedges and garden fixtures.
       function tree(x: number, z: number, size = 1) {
@@ -709,7 +1029,12 @@ export default function EnergyScene(props: EnergySceneProps) {
         );
         raycaster.setFromCamera(pointer, camera);
         const hits = raycaster.intersectObjects(
-          [house, solar, ...(latest.current.evEnabled ? [ev, charger] : [])],
+          [
+            house,
+            solar,
+            inventory,
+            ...(latest.current.evEnabled ? [...cars.values(), charger] : []),
+          ],
           true,
         );
         if (hits[0]) {
@@ -728,7 +1053,23 @@ export default function EnergyScene(props: EnergySceneProps) {
         const width = Math.max(container.clientWidth, 1);
         const height = Math.max(container.clientHeight, 1);
         const aspect = width / height;
-        const viewHeight = Math.max(8.65, 12.8 / aspect);
+        camera.updateMatrixWorld(true);
+        let horizontal = 0;
+        let vertical = 0;
+        for (const x of [sceneBounds.min.x, sceneBounds.max.x])
+          for (const y of [sceneBounds.min.y, sceneBounds.max.y])
+            for (const z of [sceneBounds.min.z, sceneBounds.max.z]) {
+              const corner = new THREE.Vector3(x, y, z).applyMatrix4(
+                camera.matrixWorldInverse,
+              );
+              horizontal = Math.max(horizontal, Math.abs(corner.x));
+              vertical = Math.max(vertical, Math.abs(corner.y));
+            }
+        const viewHeight = Math.max(
+          8.65,
+          vertical * 2.12,
+          (horizontal * 2.12) / aspect,
+        );
         camera.left = (-viewHeight * aspect) / 2;
         camera.right = (viewHeight * aspect) / 2;
         camera.top = viewHeight / 2;
@@ -752,7 +1093,6 @@ export default function EnergyScene(props: EnergySceneProps) {
       let elapsed = 0;
       let previous = performance.now();
       let nightAmount = latest.current.night ? 1 : 0;
-      let lastVisible = true;
       let inView = true;
       const intersection = new IntersectionObserver(([entry]) => {
         inView = entry.isIntersecting;
@@ -765,6 +1105,8 @@ export default function EnergyScene(props: EnergySceneProps) {
         if (!inView || document.hidden) return;
         const settings = latest.current;
         if (settings.playing && !reducedMotion) elapsed += dt;
+        syncInventory(settings, elapsed, settings.playing && !reducedMotion);
+        updateInventory(elapsed, settings.playing && !reducedMotion);
         nightAmount +=
           ((settings.night ? 1 : 0) - nightAmount) * Math.min(1, dt * 4);
         ambient.intensity = 2.25 - nightAmount * 1.5;
@@ -778,7 +1120,7 @@ export default function EnergyScene(props: EnergySceneProps) {
         windowGlow.emissiveIntensity = 0.04 + nightAmount * 1.05;
         warm.emissiveIntensity = 0.25 + nightAmount * 0.8;
         interiorLight.intensity =
-          (0.3 + nightAmount * 4) * Math.min(1, settings.applianceCount / 4);
+          (0.3 + nightAmount * 4) * Math.min(1, applianceTotal / 4);
         roofLight.intensity = nightAmount * 0.28;
         skyMarker.quaternion.copy(camera.quaternion);
         sunRays.visible = nightAmount < 0.5;
@@ -787,17 +1129,13 @@ export default function EnergyScene(props: EnergySceneProps) {
           .copy(daySunColor)
           .lerp(nightMoonColor, nightAmount);
         screen.emissiveIntensity =
-          settings.applianceCount > 0 ? 0.3 + nightAmount * 0.7 : 0;
-        if (lastVisible !== settings.evEnabled) {
-          ev.visible = settings.evEnabled;
-          charger.visible = settings.evEnabled;
-          lastVisible = settings.evEnabled;
-        }
+          applianceTotal > 0 ? 0.3 + nightAmount * 0.7 : 0;
+        charger.visible = currentEvCount > 0;
         const solarActive = settings.solarKw > 0;
         solar.visible = solarActive;
         solarFlow.object.visible = solarActive && !settings.night;
         evFlow.object.visible =
-          settings.evEnabled &&
+          currentEvCount > 0 &&
           (settings.evCharging ?? true) &&
           solarActive &&
           !settings.night;
@@ -809,7 +1147,7 @@ export default function EnergyScene(props: EnergySceneProps) {
           object.visible =
             solarActive &&
             !settings.night &&
-            (!forEv || (settings.evEnabled && (settings.evCharging ?? true)));
+            (!forEv || (currentEvCount > 0 && (settings.evCharging ?? true)));
           if (object.visible) {
             const t = Math.max(
               0.001,
@@ -832,6 +1170,7 @@ export default function EnergyScene(props: EnergySceneProps) {
         renderer.domElement.removeEventListener("pointerdown", pointerDown);
         renderer.domElement.removeEventListener("pointerup", pointerUp);
         controls.dispose();
+        instanceBatches.forEach(({ part }) => part.dispose());
         geometries.forEach((geometry) => geometry.dispose());
         materials.forEach((material) => material.dispose());
         sunLight.shadow.dispose();
@@ -855,6 +1194,8 @@ export default function EnergyScene(props: EnergySceneProps) {
   return (
     <div
       ref={host}
+      role="group"
+      aria-label={`เครื่องใช้ไฟฟ้า ${props.appliances.reduce((sum, device) => sum + device.count, 0)} ชิ้น รถ EV ${props.evEnabled ? props.evCount : 0} คัน ${props.night ? "กลางคืน" : "กลางวัน"} ${props.playing ? "กำลังเล่น" : "หยุดภาพเคลื่อนไหว"}`}
       style={{
         width: "100%",
         height: "100%",

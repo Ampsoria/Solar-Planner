@@ -245,3 +245,62 @@ test("invalid numeric inputs are bounded and never leak NaN into totals", () => 
       assert.ok(Number.isFinite(value) && value >= 0);
   assert.equal(result.monthlyLoadKwh, 0);
 });
+
+test("adding and removing EVs scales per-car energy exactly", () => {
+  const one = calculateEnergy(
+    [],
+    { ...DEFAULT_EV, count: 1 },
+    DEFAULT_SETTINGS,
+  );
+  const two = calculateEnergy(
+    [],
+    { ...DEFAULT_EV, count: 2 },
+    DEFAULT_SETTINGS,
+  );
+  const none = calculateEnergy(
+    [],
+    { ...DEFAULT_EV, count: 0 },
+    DEFAULT_SETTINGS,
+  );
+  close(two.monthlyEvKwh, one.monthlyEvKwh * 2);
+  close(two.gridImportKwh, one.gridImportKwh * 2);
+  close(none.monthlyEvKwh, 0);
+});
+
+test("coverage target returns the smallest half-kWp system that actually reduces imports", () => {
+  const devices = [device({ startHour: 9, hoursPerDay: 7 })];
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    roofAreaM2: 100,
+    coverageTargetPercent: 50,
+  };
+  const plan = calculateEnergy(devices, noEv, settings);
+  assert.ok(plan.coverageTargetKwp !== null);
+  const fitted = calculateEnergy(devices, noEv, {
+    ...settings,
+    solarKwp: plan.coverageTargetKwp as number,
+  });
+  const smaller = calculateEnergy(devices, noEv, {
+    ...settings,
+    solarKwp: (plan.coverageTargetKwp as number) - 0.5,
+  });
+  assert.ok(fitted.solarCoveragePercent >= 50);
+  assert.ok(smaller.solarCoveragePercent < 50);
+  close(
+    fitted.solarCoveragePercent,
+    (1 - fitted.gridImportKwh / fitted.monthlyLoadKwh) * 100,
+  );
+});
+
+test("night usage cannot reach a daytime solar target even with ample roof or export", () => {
+  const plan = calculateEnergy([], DEFAULT_EV, {
+    ...DEFAULT_SETTINGS,
+    roofAreaM2: 500,
+    exportEnabled: true,
+    coverageTargetPercent: 100,
+  });
+  assert.equal(plan.coverageTargetKwp, null);
+  assert.equal(plan.maximumCoveragePercent, 0);
+  assert.equal(plan.solarCoveragePercent, 0);
+  assert.equal(plan.billReductionPercent, 0);
+});

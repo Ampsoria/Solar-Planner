@@ -409,17 +409,22 @@ export default function Home() {
               typeof o[k] === typeof v &&
               (typeof v !== "number" || numeric(o[k])),
           );
+        const restoredEv = { ...DEFAULT_EV, ...plan.ev };
+        const restoredSettings = { ...DEFAULT_SETTINGS, ...plan.settings };
         // Load browser-only saved state after the first render matches the server.
         if (
           plan.version === 1 &&
           devicesValid &&
-          validObject(plan.ev, DEFAULT_EV) &&
-          validObject(plan.settings, DEFAULT_SETTINGS)
+          validObject(restoredEv, DEFAULT_EV) &&
+          Number.isInteger(restoredEv.count) &&
+          restoredEv.count >= 0 &&
+          restoredEv.count <= 6 &&
+          validObject(restoredSettings, DEFAULT_SETTINGS)
         ) {
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setAppliances(plan.appliances);
-          setEv(plan.ev);
-          setSettings(plan.settings);
+          setEv(restoredEv);
+          setSettings(restoredSettings);
           setSaved(true);
         }
       }
@@ -476,6 +481,28 @@ export default function Home() {
     setAppliances((prev) => prev.filter((a) => a.id !== id));
     setSaved(false);
   }
+  function addSceneItem(kind: "light" | "ev") {
+    if (kind === "ev") {
+      setEv((previous) => ({
+        ...previous,
+        enabled: true,
+        count: previous.enabled ? Math.min(6, previous.count + 1) : 1,
+      }));
+    } else {
+      const existing = appliances.find(
+        (item) => item.kind === "light" && item.count < 100,
+      );
+      if (existing) changeCount(existing.id, 1);
+      else if (appliances.length < 100) {
+        const preset = APPLIANCE_PRESETS.find((item) => item.kind === "light")!;
+        setAppliances((previous) => [
+          ...previous,
+          { ...preset, id: crypto.randomUUID() },
+        ]);
+      }
+    }
+    setSaved(false);
+  }
   function downloadReport() {
     const escape = (v: unknown) =>
       `"${String(v)
@@ -505,7 +532,10 @@ export default function Home() {
       ]),
       [],
       ["EV kWh/เดือน", result.monthlyEvKwh],
-      ["EV km/เดือน", ev.kmPerMonth],
+      ["จำนวนรถ EV", ev.enabled ? ev.count : 0],
+      ["EV km/คัน/เดือน", ev.kmPerMonth],
+      ["ลดไฟที่ซื้อ เปอร์เซ็นต์", result.solarCoveragePercent],
+      ["ลดค่าไฟ เปอร์เซ็นต์", result.billReductionPercent],
       ["ขนาดโซลาร์ kWp", result.solarKwp],
       ["ใช้ไฟรวม kWh/เดือน", result.monthlyLoadKwh],
       ["โซลาร์ผลิต kWh/เดือน", result.solarKwh],
@@ -623,14 +653,15 @@ export default function Home() {
               <EnergyScene
                 night={night}
                 solarKw={result.solarKwp}
-                evEnabled={ev.enabled}
+                evEnabled={ev.enabled && ev.count > 0}
+                evCount={ev.enabled ? ev.count : 0}
                 evCharging={
                   ev.enabled &&
                   ev.kmPerMonth > 0 &&
                   ((night ? 21 : 12) - ev.startHour + 24) % 24 <
                     ev.chargingHours
                 }
-                applianceCount={appliances.reduce((sum, a) => sum + a.count, 0)}
+                appliances={appliances}
                 playing={playing}
                 onSelect={selectScene}
               />
@@ -710,6 +741,11 @@ export default function Home() {
               <span className="live-dot" />
               {fmt(result.monthlyLoadKwh, 1)} kWh <span>ต่อเดือน</span>
             </div>
+            <div className="summary-coverage">
+              <Sun size={14} />
+              โซลาร์ลดไฟที่ซื้อได้{" "}
+              <strong>{fmt(result.solarCoveragePercent, 1)}%</strong>
+            </div>
             <div className="summary-divider" />
             <div className="summary-row">
               <span>ค่าไฟหลังติดโซลาร์</span>
@@ -745,6 +781,37 @@ export default function Home() {
               ประมาณการจากแผนตัวอย่าง · ปรับให้ตรงบ้านคุณได้
             </small>
           </aside>
+        </div>
+        <div className="scene-actions">
+          <span>
+            <Rotate3D size={16} />
+            <strong>
+              {appliances.reduce((sum, a) => sum + a.count, 0)}
+            </strong>{" "}
+            เครื่องใช้ไฟฟ้า · <strong>{ev.enabled ? ev.count : 0}</strong> รถ EV{" "}
+            <small>เพิ่ม 1 ชิ้น = โมเดล 1 ชิ้น</small>
+          </span>
+          <div>
+            <button
+              onClick={() => addSceneItem("light")}
+              disabled={
+                appliances.length >= 100 &&
+                !appliances.some((a) => a.kind === "light" && a.count < 100)
+              }
+            >
+              <Plus size={14} />
+              <Lightbulb size={16} />
+              หลอดไฟ
+            </button>
+            <button
+              onClick={() => addSceneItem("ev")}
+              disabled={ev.enabled && ev.count >= 6}
+            >
+              <Plus size={14} />
+              <CarFront size={16} />
+              รถ EV
+            </button>
+          </div>
         </div>
         <section className="metric-grid" aria-label="สรุปแผนโซลาร์">
           <div className="metric-card">
@@ -992,9 +1059,41 @@ export default function Home() {
                     <span />
                   </label>
                 </div>
-                <fieldset disabled={!ev.enabled} className="ev-fields">
+                <div className="ev-count-row">
+                  <div>
+                    <strong>จำนวนรถในบ้าน</strong>
+                    <small>
+                      แต่ละคันใช้ระยะทางและเวลาชาร์จเดียวกัน · สูงสุด 6 คัน
+                    </small>
+                  </div>
+                  <div className="stepper">
+                    <button
+                      aria-label="ลดรถ EV 1 คัน"
+                      disabled={!ev.enabled || ev.count === 0}
+                      onClick={() => updateEv("count", ev.count - 1)}
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span>{ev.enabled ? ev.count : 0}</span>
+                    <button
+                      aria-label="เพิ่มรถ EV 1 คัน"
+                      disabled={ev.enabled && ev.count >= 6}
+                      onClick={() => addSceneItem("ev")}
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </div>
+                <fieldset
+                  disabled={!ev.enabled || ev.count === 0}
+                  className="ev-fields"
+                >
                   <div className="form-grid">
-                    <Field label="ระยะทางที่ชาร์จจากบ้าน" unit="กม. / เดือน">
+                    <Field
+                      label="ระยะทางต่อรถ 1 คัน"
+                      unit="กม. / เดือน"
+                      hint="นับเฉพาะระยะทางที่เติมไฟจากบ้าน"
+                    >
                       <NumberInput
                         type="number"
                         min="0"
@@ -1136,12 +1235,84 @@ export default function Home() {
               <span>0 kWp</span>
               <span>{fmt(sliderMax, 1)} kWp</span>
             </div>
+            <div className="coverage-highlight" aria-live="polite">
+              <div>
+                <span>ติด {fmt(result.solarKwp, 1)} kWp ลดไฟที่ซื้อได้</span>
+                <strong>
+                  {fmt(result.solarCoveragePercent, 1)}
+                  <small>%</small>
+                </strong>
+              </div>
+              <span className="coverage-sun">
+                <Sun size={27} />
+              </span>
+              <div className="coverage-meter">
+                <i style={{ width: `${result.solarCoveragePercent}%` }} />
+              </div>
+              <p>
+                โซลาร์ใช้เอง {fmt(result.selfConsumedKwh, 1)} จาก{" "}
+                {fmt(result.monthlyLoadKwh, 1)} kWh/เดือน
+              </p>
+              <small>
+                ค่าไฟลดลง {fmt(result.billReductionPercent, 1)}% หรือ{" "}
+                {money(result.monthlySavings)}/เดือน · ยังไม่รวมรายได้ขายไฟ
+              </small>
+            </div>
+            <div className="coverage-target">
+              <label htmlFor="coverage-goal">อยากลดไฟที่ซื้อจากการไฟฟ้า</label>
+              <select
+                id="coverage-goal"
+                value={settings.coverageTargetPercent ?? 50}
+                onChange={(event) =>
+                  updateSettings(
+                    "coverageTargetPercent",
+                    Number(event.target.value),
+                  )
+                }
+              >
+                {[25, 50, 75, 100].map((percent) => (
+                  <option key={percent} value={percent}>
+                    {percent}% ของไฟที่ใช้
+                  </option>
+                ))}
+              </select>
+              {result.monthlyLoadKwh === 0 ? (
+                <p>เพิ่มอุปกรณ์หรือรถ EV เพื่อคำนวณขนาดโซลาร์</p>
+              ) : result.coverageTargetKwp !== null ? (
+                <>
+                  <p>
+                    ระบบตั้งแต่{" "}
+                    <strong>{fmt(result.coverageTargetKwp, 1)} kWp</strong>{" "}
+                    รองรับเป้าหมายนี้ได้ในแบบจำลอง
+                  </p>
+                  <button
+                    className="primary-button full"
+                    onClick={() =>
+                      updateSettings("solarKwp", result.coverageTargetKwp!)
+                    }
+                  >
+                    <PanelTop size={16} />
+                    ใช้ขนาดตามเป้าหมาย
+                    <ArrowRight size={15} />
+                  </button>
+                </>
+              ) : (
+                <p>
+                  ด้วยเวลาใช้ไฟและพื้นที่หลังคานี้ โซลาร์ช่วยได้สูงสุด{" "}
+                  <strong>{fmt(result.maximumCoveragePercent, 1)}%</strong>{" "}
+                  ลองย้ายโหลดมาช่วงกลางวันหรือเพิ่มพื้นที่หลังคา
+                  ไฟกลางคืนยังต้องซื้อหากไม่มีแบตเตอรี่
+                </p>
+              )}
+            </div>
             <button
               className="recommend-button"
               onClick={() => updateSettings("solarKwp", result.recommendedKwp)}
             >
               <Sparkles size={15} />
-              <span>ใช้ขนาดแนะนำ {fmt(result.recommendedKwp, 1)} kWp</span>
+              <span>
+                เน้นใช้โซลาร์เอง · {fmt(result.recommendedKwp, 1)} kWp
+              </span>
               <ArrowUpRight size={15} />
             </button>
             <div className="solar-detail-row">

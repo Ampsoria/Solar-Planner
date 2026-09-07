@@ -36,6 +36,8 @@ export interface Appliance {
 
 export interface EVSettings {
   enabled: boolean;
+  /** Vehicles with the same per-car driving and charging profile. */
+  count: number;
   kmPerMonth: number;
   kwhPer100km: number;
   /** Percent of wall energy lost before reaching the battery. */
@@ -57,6 +59,7 @@ export interface PlannerSettings {
   tariffVersion?: TariffVersion;
   /** Assumed approved AC export capacity; default matches the 2026 5 kW offer cap. */
   exportPowerLimitKw?: number;
+  coverageTargetPercent?: number;
 }
 
 export interface HourlyEnergy {
@@ -104,6 +107,9 @@ export interface EnergyResult {
   roofMaxKwp: number;
   selfConsumptionPercent: number;
   solarCoveragePercent: number;
+  billReductionPercent: number;
+  maximumCoveragePercent: number;
+  coverageTargetKwp: number | null;
   hourly: HourlyEnergy[];
   /** Device cost is a proportional share of the variable bill, excluding service. */
   deviceUsage: { id: string; kwh: number; cost: number }[];
@@ -247,6 +253,7 @@ export const DEFAULT_APPLIANCES: Appliance[] = APPLIANCE_PRESETS.slice(
 
 export const DEFAULT_EV: EVSettings = {
   enabled: true,
+  count: 1,
   kmPerMonth: 1200,
   kwhPer100km: 15,
   chargingLossPercent: 10,
@@ -265,6 +272,7 @@ export const DEFAULT_SETTINGS: PlannerSettings = {
   exportRate: 2.2,
   tariffVersion: "sep2026",
   exportPowerLimitKw: 5,
+  coverageTargetPercent: 50,
 };
 
 const DAYS = 30;
@@ -364,7 +372,9 @@ export function calculateEnergy(
     0,
   );
   const monthlyEvKwh = ev.enabled
-    ? (bounded(ev.kmPerMonth, 0, 30000) * bounded(ev.kwhPer100km, 0, 100)) /
+    ? (Math.floor(bounded(ev.count ?? 1, 0, 6, 1)) *
+        bounded(ev.kmPerMonth, 0, 30000) *
+        bounded(ev.kwhPer100km, 0, 100)) /
       100 /
       (1 - bounded(ev.chargingLossPercent, 0, 50) / 100)
     : 0;
@@ -471,6 +481,40 @@ export function calculateEnergy(
       else break;
     }
   }
+  // Solve against simultaneous hourly use; exported units never offset imports.
+  const selfUseAtSize = (size: number) =>
+    load.reduce(
+      (sum, demand, index) =>
+        sum + Math.min(demand, solarPerKwp[index % 24] * size),
+      0,
+    );
+  const maxInstallableKwp = Math.floor(Math.min(30, roofMaxKwp) * 2) / 2;
+  const maximumCoveragePercent =
+    monthlyLoadKwh > 0
+      ? Math.min(100, (selfUseAtSize(maxInstallableKwp) / monthlyLoadKwh) * 100)
+      : 0;
+  const coverageTarget = bounded(
+    settings.coverageTargetPercent ?? 50,
+    0,
+    100,
+    50,
+  );
+  let coverageTargetKwp: number | null = coverageTarget === 0 ? 0 : null;
+  if (
+    monthlyLoadKwh > 0 &&
+    coverageTarget > 0 &&
+    maximumCoveragePercent + 1e-7 >= coverageTarget
+  ) {
+    for (let size = 0.5; size <= maxInstallableKwp; size += 0.5) {
+      if (
+        (selfUseAtSize(size) / monthlyLoadKwh) * 100 + 1e-7 >=
+        coverageTarget
+      ) {
+        coverageTargetKwp = size;
+        break;
+      }
+    }
+  }
   const variableBill = Math.max(
     0,
     billBefore - SERVICE_CHARGE * (1 + VAT_RATE),
@@ -503,6 +547,10 @@ export function calculateEnergy(
     paybackYears,
     recommendedKwp,
     roofMaxKwp,
+    coverageTargetKwp,
+    maximumCoveragePercent,
+    billReductionPercent:
+      billBefore > 0 ? Math.max(0, (monthlySavings / billBefore) * 100) : 0,
     selfConsumptionPercent:
       solarKwh > 0 ? Math.min(100, (selfConsumedKwh / solarKwh) * 100) : 0,
     solarCoveragePercent:
