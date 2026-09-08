@@ -2,7 +2,7 @@
   <h1>☀️ Ampsoria Solar Planner ☀️</h1>
   <p><i>A Thai-language home solar planner with an interactive 3D house, appliances, and EV charging simulation.</i></p>
 
-  [![Try it out!](https://img.shields.io/badge/🚀_Try_it_out!-Live_Demo-blue?style=for-the-badge)](https://ampsoria.github.io/Amp_SolarCell)
+  [![Try it out!](https://img.shields.io/badge/🚀_Try_it_out!-Live_Demo-blue?style=for-the-badge)](https://ampsoria-solar-planner.ampsoriainyourarea.workers.dev)
 </div>
 
 ---
